@@ -34,11 +34,8 @@ public class Server {
                     connectedClients++;
                     System.out.println("Nowy klient podłączony. Liczba klientów: " + connectedClients);
                     executorService.execute(new ClientHandler(clientSocket));
-                } else {
-                    PrintWriter out = new PrintWriter(clientSocket.getOutputStream(), true);
-                    out.println("MAX_STUDENTS_REACHED");
-                    clientSocket.close();
                 }
+
             }
         } catch (IOException e) {
             e.printStackTrace();

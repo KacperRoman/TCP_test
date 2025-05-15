@@ -2,6 +2,7 @@ package TestowanieTCP;
 import java.io.*;
 import java.net.*;
 import java.util.Scanner;
+import java.util.concurrent.*;
 
 public class Client {
     public static void main(String[] args) {
@@ -19,43 +20,44 @@ public class Client {
                 Socket socket = new Socket(hostname, port);
                 BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
                 PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
-                Scanner scanner = new Scanner(System.in);
         ) {
             System.out.println("Połączono z serwerem. Rozpoczynanie testu...");
 
             String line;
             while ((line = in.readLine()) != null) {
-                if (line.equals("MAX_STUDENTS_REACHED")) {
-                    System.out.println("Serwer osiągnął maksymalną liczbę połączeń. Spróbuj później.");
-                    return;
-                } else if (line.equals("QUESTION")) {
-                    // Wyświetlanie pytania
+                 if (line.equals("QUESTION")) {
                     System.out.println();
                     while (!(line = in.readLine()).equals("END_QUESTION")) {
                         System.out.println(line);
                     }
 
-                    // Pobieranie odpowiedzi od użytkownika
-                    System.out.print("Twoja odpowiedź (a-d): ");
-                    String answer = scanner.nextLine().toLowerCase();
-                    while (!answer.matches("[a-d]?")) {
-                        System.out.print("Nieprawidłowa odpowiedź. Wpisz a, b, c lub d: ");
-                        answer = scanner.nextLine().toLowerCase();
+                    ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
+                    Future<String> future = scheduler.submit(() -> {
+                        BufferedReader userInput = new BufferedReader(new InputStreamReader(System.in));
+                        String input = userInput.readLine();
+                        return (input != null && input.matches("[a-dA-D]")) ? input.toLowerCase() : "czas";
+                    });
+
+                    String answer = "czas";
+                    try {
+                        answer = future.get(30, TimeUnit.SECONDS);
+                    } catch (TimeoutException e) {
+                        System.out.println("\nCzas na odpowiedź minął. Automatycznie zaznaczono: 'czas'");
+                        System.out.println("Naciśnij dowolny przycisk, aby kontynuować...");
+                    } catch (Exception e) {
+                        System.err.println("Błąd: " + e.getMessage());
+                    } finally {
+                        future.cancel(true);
+                        scheduler.shutdownNow();
                     }
 
                     out.println(answer);
                 } else if (line.equals("RESULT")) {
-                    // Wyświetlanie wyniku
                     String result = in.readLine();
                     System.out.println("\nTwój wynik: " + result);
                     break;
-                }else if (line.equals("TIMEOUT")) {
-                System.out.println("Czas na odpowiedź minął. Automatycznie zaznaczono: 'czas'");
-                continue; // Przejście do kolejnego pytania
+                }
             }
-
-
-        }
         } catch (UnknownHostException e) {
             System.err.println("Nieznany host: " + hostname);
         } catch (IOException e) {
