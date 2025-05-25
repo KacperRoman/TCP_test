@@ -4,3 +4,7 @@ SERVER_PORT=12345
 QUESTIONS_FILE=src/TestowanieTCP/bazaPytan.txt
 ANSWERS_FILE=bazaOdpowiedzi.txt
 RESULTS_FILE=wyniki.txt
+
+DB_URL=jdbc:mysql://localhost:3306/testowanie_tcp?serverTimezone=UTC&allowPublicKeyRetrieval=true&useSSL=false
+DB_USER=root
+DB_PASSWORD=
