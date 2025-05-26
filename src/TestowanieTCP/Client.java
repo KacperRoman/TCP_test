@@ -45,6 +45,10 @@ public class Client {
                     Future<String> future = scheduler.submit(() -> {
                         BufferedReader userInput = new BufferedReader(new InputStreamReader(System.in));
                         String input = userInput.readLine();
+                        while (input == null || !input.matches("[a-dA-D]")) {
+                            System.out.println("Nieprawidłowa odpowiedź. Proszę wpisać literę od a do d:");
+                            input = userInput.readLine();
+                        }
                         return (input != null && input.matches("[a-dA-D]")) ? input.toLowerCase() : "czas";
                     });
 

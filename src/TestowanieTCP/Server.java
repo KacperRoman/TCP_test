@@ -24,7 +24,8 @@ public class Server {
     private static List<Question> questions = new ArrayList<>();
     private static ExecutorService executorService;
     private static ServerSocket serverSocket;
-    private static AtomicInteger connectedClients = new AtomicInteger(0);
+    private static Semaphore clientSlots;
+    //private static AtomicInteger connectedClients = new AtomicInteger(0);
 
     public static void main(String[] args) {
         loadConfig();
@@ -37,18 +38,21 @@ public class Server {
             serverSocket = new ServerSocket(SERVER_PORT);
             System.out.println("Serwer uruchomiony na porcie " + SERVER_PORT);
             System.out.println("Oczekiwanie na połączenia klientów... (Max: " + MAX_STUDENTS + ")");
-
+            clientSlots = new Semaphore(MAX_STUDENTS);
             while (!serverSocket.isClosed()) {
                 Socket clientSocket = serverSocket.accept();
-                if (connectedClients.get() < MAX_STUDENTS) {
-                    connectedClients.incrementAndGet();
-                    System.out.println("Nowy klient podłączony z " + clientSocket.getInetAddress().getHostAddress() + ". Liczba klientów: " + connectedClients.get());
-                    executorService.execute(new ClientHandler(clientSocket));
-                } else {
-                    System.out.println("Odmowa połączenia dla " + clientSocket.getInetAddress().getHostAddress() + ". Osiągnięto limit MAX_STUDENTS.");
-                    PrintWriter tempOut = new PrintWriter(clientSocket.getOutputStream(), true);
-                    tempOut.println("SERVER_FULL");
-                    clientSocket.close();
+                try {
+                    clientSlots.acquire(); // Blokuje, jeśli osiągnięto limit
+                    executorService.execute(() -> {
+                        try {
+                            new ClientHandler(clientSocket).run();
+                        } finally {
+                            clientSlots.release(); // Zwolnij miejsce po zakończeniu obsługi klienta
+                        }
+                    });
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt(); // Przywróć status przerwania wątku
+                    System.err.println("Wątek został przerwany podczas oczekiwania na dostępne miejsce: " + e.getMessage());
                 }
             }
         } catch (IOException e) {
@@ -144,7 +148,7 @@ public class Server {
                     + "id INT AUTO_INCREMENT PRIMARY KEY,"
                     + "student_id VARCHAR(255) NOT NULL,"
                     + "question_id INT NOT NULL,"
-                    + "submitted_answer CHAR(1),"
+                    + "submitted_answer VARCHAR(10),"
                     + "timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
                     + ");";
             try (Statement stmt = conn.createStatement()) {
@@ -348,27 +352,23 @@ public class Server {
                     }
                     out.println("END_QUESTION");
 
-                    String answer = "czas";
+                    // Odbieranie odpowiedzi z limitem czasu
+                    String answer = "";
                     ExecutorService answerExecutor = Executors.newSingleThreadExecutor();
-                    Future<String> future = answerExecutor.submit(() -> {
-                        String clientAnswer = in.readLine();
-                        return (clientAnswer == null || clientAnswer.isBlank()) ? "czas" : clientAnswer;
-                    });
+                    Future<String> future = answerExecutor.submit(() -> in.readLine());
 
                     try {
                         answer = future.get(QUESTION_TIMEOUT, TimeUnit.SECONDS);
-                        System.out.println(studentId + ": Otrzymano odpowiedź: " + answer + " na pytanie " + (i + 1));
+                        if (answer == null || answer.isBlank()) {
+                            answer = "czas";
+                            out.println("TIMEOUT");
+                        }
                     } catch (TimeoutException e) {
                         future.cancel(true);
-                        answer = "czas";
-                        System.out.println(studentId + ": Czas na odpowiedź minął dla pytania " + (i + 1));
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                        System.err.println(studentId + ": Wątek został przerwany podczas oczekiwania na odpowiedź.");
-                        answer = "czas";
-                    } catch (ExecutionException e) {
-                        System.err.println(studentId + ": Błąd podczas pobierania odpowiedzi: " + e.getCause().getMessage());
-                        answer = "czas";
+                        answer = "czas"; // Pusta odpowiedź w przypadku przekroczenia czasu
+                        out.println("TIMEOUT");
+                    } catch (Exception e) {
+                        e.printStackTrace();
                     } finally {
                         answerExecutor.shutdownNow();
                     }
@@ -401,8 +401,9 @@ public class Server {
                     if (clientSocket != null && !clientSocket.isClosed()) {
                         clientSocket.close();
                     }
-                    connectedClients.decrementAndGet();
-                    System.out.println(studentId + ": Klient rozłączony. Liczba klientów: " + connectedClients.get());
+                    //connectedClients.decrementAndGet();
+                    // System.out.println(studentId + ": Klient rozłączony. Liczba klientów: " + connectedClients.get());
+                    System.out.println(studentId + ": Klient rozłączony. Liczba dostępnych miejsc: " + clientSlots.availablePermits());
                 } catch (IOException e) {
                     System.err.println(studentId + ": Błąd podczas zamykania gniazda klienta: " + e.getMessage());
                 }
